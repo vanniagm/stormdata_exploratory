@@ -30,7 +30,7 @@ This database documents the following phenomena:
 3. Other significant meteorological events, such as record maximum or minimum temperatures or precipitation that occur in connection with another event.  
 
 The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete. 
-The storm database includes $902297$ of types of events recorded. Note that several of these entries may correspond to the same event type but recorded with a different name by the storm data preparer. According to the NOAA storm database desceeiption there a total of $48$ different event types (table 2.1.1 in [StromData preparation publication](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) )
+The storm database includes $902297$ of types of events recorded. Note that several of these entries may correspond to the same event type but recorded with a different name by the storm data preparer. According to the NOAA storm database description there a total of $48$ different event types (table 2.1.1 in [StromData preparation publication](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) )
 
 The NOAA storm database used for this analysis can be downloaded from the following link [Storm data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2), from the coursera web site. The data set contains 37 variables. Since I am only interested in the health (fatalities or injuries) and property or crop damages across the US, we will only read the following variables: 
 - BGN_DATE: When the event took place
@@ -44,16 +44,27 @@ The NOAA storm database used for this analysis can be downloaded from the follow
 
 ### 1. Downloading and reading the database
 
-```{r}
+```{r,echo=FALSE}
 download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","repdata%2Fdata%2FStormData.csv.bz2")
+#Setting libraries
+library(lubridate)
+library(plyr)
+library(reshape2)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(tidyr)
 ```
 
 
 ```{r}
-library(lubridate)
 setClass("myDate")
 setAs("character","myDate", function(from) as.Date(from, format="%m/%d/%Y %H:%M:%S",origin="1950-01-01") )
-data<-read.csv("repdata%2Fdata%2FStormData.csv.bz2",sep=",",header=TRUE,colClasses = c("NULL","myDate",rep("NULL",4),"factor","factor",rep("NULL",14),rep("numeric",3),"factor","numeric","factor",rep("NULL",9)))
+data<-read.csv("repdata%2Fdata%2FStormData.csv.bz2",sep=",",header=TRUE,colClasses =
+                       c("NULL","myDate","character","character",rep("NULL",2),"factor",
+                         "factor",rep("NULL",3),"myDate","character",
+                         rep("NULL",9),rep("numeric",3),"factor","numeric","factor",
+                         rep("NULL",3),rep("numeric",4),rep("NULL",2)))
 ```
 
 
@@ -125,23 +136,22 @@ df$CROPDMGEXP<-toupper(df$CROPDMGEXP)
 
 ### 5. Excluding those that did not cause any damage
 
-I will exclude all those events that did not cause any damage, sicne we are interested in exploring only the damages caused.
+I will exclude all those events that did not cause any damage, since we are interested in exploring only the damages caused.
 
 ```{r}
 dfdam<-df[df$FATALITIES!=0 | df$INJURIES!=0 | df$PROPDMG!=0 | df$CROPDMG!=0,]
 ```
 
-- Now mutliply the variables PROPDMG and CROPDMG with the exponential variables (in exponent form).
+- Now multiply the variables PROPDMG and CROPDMG with the exponential variables (in exponent form).
 
 ```{r,echo=TRUE}
-library(plyr)
 dfdam$PROPDMGEXP<-revalue(dfdam$PROPDMGEXP, c("B"="E9", "M"="E6","K"="E3","H"="E2")) # or levels(dfdam$PROPDMGEXP)<-c("E9","E2","E3","E6")
 dfdam$CROPDMGEXP<-revalue(dfdam$CROPDMGEXP, c("B"="E9", "M"="E6","K"="E3"))
 dfdam$PROPDMG <- do.call(paste, c(dfdam[c("PROPDMG","PROPDMGEXP")], sep=""))
 dfdam$CROPDMG <- do.call(paste, c(dfdam[c("CROPDMG","CROPDMGEXP")], sep=""))
 dfdam$PROPDMG<-as.numeric(dfdam$PROPDMG)
 dfdam$CROPDMG<-as.numeric(dfdam$CROPDMG)
-dfdam<-dfdam[-c(7,9)]
+dfdam<-dfdam[-c(11,13)]
 ```
 
 ### 6. Matching and minimizing the number of event types
@@ -167,7 +177,7 @@ EVTYPEREF<-read.csv("files/evtyperef.csv",header=TRUE,colClasses = "character");
 uniquematches<-lapply(EVTYPEREF,function(x){unique(grep(x,dfdam$EVTYPE,value = TRUE))})
 ```
 
-- The way I will match several events that share identical words, or share multiple events in one entry is by identifying first by most severe, for example if an event is described as "heavry rain/flood/hurricane", then "hurricane is chosen", that is "hurricane" is matched first, then "flood" and then "rain". For this reason I have to choose for each match a selected order, such as:
+- The way I will match several events that share identical words, or share multiple events in one entry is by identifying first by most severe, for example if an event is described as "heavy rain/flood/hurricane", then "hurricane is chosen", that is "hurricane" is matched first, then "flood" and then "rain". For this reason I have to choose for each match a selected order, such as:
 
 ```{r}
 dfdam$EVTYPE[grep("ASTRONOMICAL LOW TIDE|LOW TIDE",dfdam$EVTYPE)]<-"ASTRONOMICAL LOW T"
@@ -229,6 +239,48 @@ length(events)
 events
 ```
 
+### Other variables (features)
+        
+1. US region: Let us add a column matching the state with the US region according to the state database in R.
+
+```{r}
+stateNOAA<-as.character(unique(dfdam$STATE))
+#We see that there are more entries than the common 50 (includes other regions and territories)
+complement_state<-function(x,y) unique(c(setdiff(x,y),setdiff(y,x)))
+dfdam$REGION<-mapvalues(as.character(dfdam$STATE),from = c(as.character(state.abb),
+                                                           complement_state(stateNOAA,state.abb)),
+                        to =(c(as.character(state.region),rep("Other",17))))
+```
+
+Other useful variables that could give us an insight of region/time and events correlation are: 
+        
+        2. Elapsed time for each event when both beginning date/time and ending date/time was reported. So let us add the column TIME_DIFF
+
+```{r}
+dfdam<-dfdam%>%mutate(END_DATE2=ifelse(is.na(END_DATE),as.character(BGN_DATE),as.character(END_DATE)))
+dfdam$END_DATE<-dfdam$END_DATE2
+dfdam$END_DT<-as.POSIXct(paste(dfdam$END_DATE,gsub("[^0-9]","",dfdam$END_TIME)," "),format="%Y-%m-%d %H%M")
+dfdam$BGN_DT<-as.POSIXct(paste(dfdam$BGN_DATE,gsub("[^0-9]","",dfdam$BGN_TIME)," "),format="%Y-%m-%d %H%M")
+dfdam<-dfdam%>% mutate(TIME_DIFF=as.numeric(difftime(END_DT,BGN_DT,units="hours")))
+```
+
+3. Area: Approximate area covered by each event when beginning and ending coordinates (latitude,longitude) are given. Now I add the column LOC_DIFF. To calculate the area covered I use the Haversine formula for the great circle distance.
+
+```{r}
+great_distance_hf <- function(lat1,long1,lat2,long2) {
+        R <- 6371 
+        a <- sin((lat2 - lat1)/2)^2 + cos(lat1) * cos(lat2) * sin((long2 - long1)/2)^2
+        c <- 2 * asin(min(1,sqrt(a)))
+        d = R * c
+        return(d) # km
+}
+dfdam<-dfdam%>%mutate(
+        LOC_DIFF=mapply(great_distance_hf,
+                        dfdam$LATITUDE,dfdam$LONGITUDE,
+                        dfdam$LATITUDE_E,dfdam$LONGITUDE_))
+```
+
+
 ## Results
 
 As stated before, I am interested in which types of events are most harmful with respect to population health across the U.S., and which types of events have the greatest economic consequences across the U.S. 
@@ -236,9 +288,28 @@ As stated before, I am interested in which types of events are most harmful with
 First, let us look at the most frequent events through out the years, which not need to be necessarily the most harmful. The figure below shows the total number of events from 1993 to 2011 for each type of weather event.
 
 ```{r fig1,fig.cap="Total number of events for each event type through 1993 and 2011"}
-library(ggplot2)
+#Theme
+gral_theme <- function(base_size = 12, base_family = "sans"){
+        theme_minimal(base_size = base_size, base_family = base_family) +
+                theme(
+                        axis.text = element_text(size = 12),
+                        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5),
+                        axis.title = element_text(size = 14),
+                        panel.grid.major = element_line(color = "grey"),
+                        panel.grid.minor = element_blank(),
+                        panel.background = element_rect(fill = "aliceblue"),
+                        strip.background = element_rect(fill = "lightgrey", color = "grey", size = 1),
+                        strip.text = element_text(face = "bold", size = 12, color = "black"),
+                        legend.position = "bottom",
+                        legend.justification = "top",
+                        legend.box = "horizontal",
+                        legend.background = element_blank(),
+                        panel.border = element_rect(color = "grey", fill = NA, size = 0.5)
+                )
+}
 g1<-ggplot(dfdam,aes(dfdam$EVTYPE))
-g1+geom_bar()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))+labs(title="Total number of events from 1993 to 2011",x="Event type",y="Total number of events")
+g1+geom_bar()+gral_theme()+labs(title="Total number of events from 1993 to 2011",x="Event type",y="Total number of events")
+# theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 ### 1. Consequences in population health 
@@ -246,7 +317,6 @@ g1+geom_bar()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))+labs(tit
 The most harmful events need not to be the most frequent. In order to explore which type of event has been most harmful through out the years, let us look at the total number of fatalities and injuries for each weather event type, as shown in the chart below.
 
 ```{r fig2, fig.cap="Total number of fatalities and injuries for each event type"}
-library(reshape2)
 fatevents<-setNames(aggregate(dfdam$FATALITIES~dfdam$EVTYPE,FUN = sum),c("Type","Fatalities"))
 injevents<-setNames(aggregate(dfdam$INJURIES~dfdam$EVTYPE,FUN = sum),c("Type","Injuries"))
 fatinjevents<-setNames(data.frame(fatevents$Type,fatevents$Fatalities,injevents$Injuries),c("Type","FATALITIES","INJURIES"))
@@ -255,17 +325,55 @@ g2<-ggplot(df_melted,aes(x=value,y=Type,color=variable))+geom_point()
 g2+labs(title="Total number of incidents",x="",y="")+theme(legend.title=element_blank())
 ```
 
-From the figure above we can see that the event that has caused most harm through out the years is the Tornado. However, this may not be the type of event that has caused most harm in a single day (or event period). This is illustrated in the following tables, were I show the top 10 most harmful incidents, where the first row shows the maximum number of fatalities and injuries in each tables, respectively.
+From the figure above we can see that the event that has caused most harm through out the years (accumulative) is the Tornado. However, this may not be the type of event that has caused most harm in a single day (or event period). This is illustrated in the following tables, were I show the top 10 most harmful incidents, where the first row shows the maximum number of fatalities and injuries in each tables, respectively.
 
 ```{r,results='asis'}
-library(knitr)
-dftop<-dfdam[with(dfdam,order(-dfdam$FATALITIES,-dfdam$INJURIES)),]
-kable(head(dftop,10))
-dftop2<-dfdam[with(dfdam,order(-dfdam$INJURIES,-dfdam$FATALITIES)),]
-kable(head(dftop2,10))
+dftop<-dfdam[with(dfdam,order(-dfdam$FATALITIES,-dfdam$INJURIES)),c("BGN_DATE",'EVTYPE','STATE','FATALITIES','INJURIES','TIME_DIFF','LOC_DIFF')]
+kable(head(dftop,5))
+dftop2<-dfdam[with(dfdam,order(-dfdam$INJURIES,-dfdam$FATALITIES)),c("BGN_DATE",'EVTYPE','STATE','FATALITIES','INJURIES','TIME_DIFF','LOC_DIFF')]
+kable(head(dftop2,5))
 ```
 
+We can also look at the variable "TIME_DIFF", which described the time elapsed (for those events we have the data for) to see this 
 
+```{r,fig.width=10,fig.height=9}
+dfdam2<-dfdam[!(is.na(dfdam$TIME_DIFF)),]
+dfdam2_gather<-dfdam2%>%gather(Type,Incidents,FATALITIES,INJURIES)
+ggplot(dfdam2_gather,aes(x=log10(TIME_DIFF),y=log10(Incidents),color=EVTYPE))+ geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Tim elapsed [h]",
+                y = "Incidents",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        )+
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        scale_x_continuous(limits=c(log10(1), log10(9000)), labels = scales::math_format(10^.x))+
+        facet_grid(Type ~ REGION) +
+        gral_theme()
+```
+
+And finally we can look at the number of incidents (fatalities and injuries) across different regions of the US.
+
+```{r,fig.width=10,fig.height=9}
+dfdam$ID<-seq.int(nrow(dfdam))
+dfdam_gather<-dfdam%>%gather(Group,Incidents,FATALITIES,INJURIES)
+dfdam_gather$Group<-as.factor(dfdam_gather$Group)
+ggplot(dfdam_gather,aes(x=BGN_DATE,y=log10(Incidents),color=EVTYPE))+
+        geom_jitter(aes(color = EVTYPE), size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Date",
+                y = "Incidents",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        ) +
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        facet_grid(Group ~ REGION) +
+        gral_theme() 
+```
 
 ### 2. Consequences in economy 
 
@@ -280,26 +388,49 @@ g2<-ggplot(df_melted,aes(x=value,y=Type,color=variable))+geom_point()
 g2+labs(title="Total cost of damages",x="",y="")+theme(legend.title=element_blank())
 ```
 
+Across the US.
+
+```{r,fig.width=10,fig.height=9}
+dfdam_gather2<-dfdam%>%gather(Group,Damages,PROPDMG,CROPDMG)
+dfdam_gather2$Group<-as.factor(dfdam_gather2$Group)
+ggplot(dfdam_gather2,aes(x=BGN_DATE,y=log10(Damages),color=EVTYPE))+
+        geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Date",
+                y = "Damages",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        ) +
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        facet_grid(Group ~ REGION) +
+        gral_theme() 
+```
+
 The following tables show the top 10 most damaging events in properties and crops cost, where the first row shows the most damaging for properties and crops, respectively.
 
 ```{r,results='asis'}
-library(knitr)
-dftop3<-dfdam[with(dfdam,order(-dfdam$PROPDMG,-dfdam$CROPDMG)),]
-kable(head(dftop3,10))
-dftop4<-dfdam[with(dfdam,order(-dfdam$CROPDMG,-dfdam$PROPDMG)),]
-kable(head(dftop4,10))
+dftop3<-dfdam[with(dfdam,order(-dfdam$PROPDMG,-dfdam$CROPDMG)),c("BGN_DATE",'EVTYPE','STATE','PROPDMG','CROPDMG','TIME_DIFF','LOC_DIFF')]
+kable(head(dftop3,5))
+dftop4<-dfdam[with(dfdam,order(-dfdam$CROPDMG,-dfdam$PROPDMG)),c("BGN_DATE",'EVTYPE','STATE','PROPDMG','CROPDMG','TIME_DIFF','LOC_DIFF')]
+kable(head(dftop4,5))
 ```
+
+**Note that some of the top events are most probably related to Hurricane Katrina (from August 28th to 31st 2005).**
+
+
 
 ### 3. Most affected state
 
 The following result shows which state was the most affected (with most frequent events) in the period from 1993 to 2011.
 
-```{r,echo=FALSE}
-library(dplyr)
-```
-
 ```{r}
+table(dfdam$REGION)
+table(dfdam$STATE)
 statemax<-dfdam%>%group_by(STATE)%>%summarise(freq=n())
 statemax[statemax$freq==max(statemax$freq),"STATE"]
 ```
+
+
 

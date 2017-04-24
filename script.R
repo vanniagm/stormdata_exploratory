@@ -1,3 +1,4 @@
+setwd("/home/vanniagm/drop/Dropbox/DataScience/Coursera/Reproducible analysis/Project_final/")
 download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","repdata%2Fdata%2FStormData.csv.bz2")
 data<-read.csv("repdata%2Fdata%2FStormData.csv.bz2",sep=",",header=TRUE,stringsAsFactors = FALSE)#[,c(2,6,7,8,23:28)]
 vars<-names(data)
@@ -7,7 +8,10 @@ nrow(data)
 library(lubridate)
 setClass("myDate")
 setAs("character","myDate", function(from) as.Date(from, format="%m/%d/%Y %H:%M:%S",origin="1950-01-01") )
-data<-read.csv("repdata%2Fdata%2FStormData.csv.bz2",sep=",",header=TRUE,colClasses = c("NULL","myDate",rep("NULL",4),"factor","factor",rep("NULL",14),rep("numeric",3),"factor","numeric","factor",rep("NULL",7),"character","NULL"))
+data<-read.csv("repdata%2Fdata%2FStormData.csv.bz2",sep=",",header=TRUE,colClasses = c("NULL","myDate","character","character",
+                                                                                       rep("NULL",2),"factor","factor",rep("NULL",3),
+                                                                                       "myDate","character",rep("NULL",9),rep("numeric",3),"factor","numeric","factor",
+                                                                                       rep("NULL",3),rep("numeric",4),rep("NULL",2)))
 
 
 # Cleaning the data
@@ -40,7 +44,7 @@ df<-data[data$BGN_DATE>="1993-01-01",]
 
 #Check for NA or NULL values
 vars<-names(df)
-checknanull<-sapply(vars[4:9],function(x){c(sum(is.na(df[x])),sum(is.null(df[x])))})
+checknanull<-sapply(vars[10:16],function(x){c(sum(is.na(df[x])),sum(is.null(df[x])))})
 
 #About exponential values
 # Several analysis have been done by (David Hood or Eddie Song) on the interpretation of exponential values different from M,m=E6, B,b=E9, K,k=E3 or H,h=E2
@@ -63,7 +67,7 @@ df$PROPDMGEXP<-toupper(df$PROPDMGEXP)
 df$CROPDMGEXP<-toupper(df$CROPDMGEXP)
 
 #exclude those from which there was no damage whatsoever
-dfdam<-df[df$FATALITIES!=0 | df$INJURIES!=0 | df$PROPDMG!=0 | df$CROPDMG!=0, 1:9]
+dfdam<-df[df$FATALITIES!=0 | df$INJURIES!=0 | df$PROPDMG!=0 | df$CROPDMG!=0, ]
 #dfhealth<-df[df$FATALITIES!=0 | df$INJURIES!=0,]
 #dfdamg<-df[df$PROPDMG !=0| df$CROPDMG !=0, ]
 #Replace {H,K,M,B} with {10^2,10^3,10^6,10^9}
@@ -75,7 +79,7 @@ dfdam$PROPDMG <- do.call(paste, c(dfdam[c("PROPDMG","PROPDMGEXP")], sep=""))
 dfdam$CROPDMG <- do.call(paste, c(dfdam[c("CROPDMG","CROPDMGEXP")], sep=""))
 dfdam$PROPDMG<-as.numeric(dfdam$PROPDMG)
 dfdam$CROPDMG<-as.numeric(dfdam$CROPDMG)
-dfdam<-dfdam[-c(7,9)]
+dfdam<-dfdam[-c(11,13)]
 
 
 # The storm database has actually 48 type of events described in the NOAA website, so we should match the 985 levels with those 48 levels 
@@ -83,7 +87,7 @@ dfdam$EVTYPE<-toupper(dfdam$EVTYPE)
 numeventtype<-unique(dfdam$EVTYPE)
 
 #export reference list for event types in table 2.1.1 from the National Weather Service Storm Data Documentation
-EVTYPEREF<-read.csv("\files\evtyperef.csv",header=TRUE,colClasses = "character");EVTYPEREF<-toupper(EVTYPEREF$EVTYPEREF)
+EVTYPEREF<-read.csv("files/evtyperef.csv",header=TRUE,colClasses = "character");EVTYPEREF<-toupper(EVTYPEREF$EVTYPEREF)
 # Let us take a first look on approximate matches with the reference list above from all the evtype values
 uniquematches<-lapply(EVTYPEREF,function(x){unique(grep(x,dfdam$EVTYPE,value = TRUE))})
 #uniquematches
@@ -208,3 +212,141 @@ dfdam[dfdam$CROPDMG==max(dfdam$CROPDMG),]
 
 freqevents<-setNames(aggregate(year(dfdam$BGN_DATE)~dfdam$EVTYPE,FUN = length),c("Nevents","Year"))
 freqevents<-dfdam%>%group_by(EVTYPE)%>%summarise(freq=n())
+
+
+#Sense of how long did the event lasted
+## Begin time and Time
+
+#Fill End_date withn NA's with BGN_DATE, assuming that the end date is in blanck because it
+#corresponds with the same beginning date
+
+dfdam<-dfdam%>%mutate(END_DATE2=ifelse(is.na(END_DATE),as.character(BGN_DATE),as.character(END_DATE)))
+dfdam$END_DATE<-dfdam$END_DATE2
+#example with a subset od data
+dfdam$END_DT<-as.POSIXct(paste(dfdam$END_DATE,gsub("[^0-9]","",dfdam$END_TIME)," "),format="%Y-%m-%d %H%M")
+dfdam$BGN_DT<-as.POSIXct(paste(dfdam$BGN_DATE,gsub("[^0-9]","",dfdam$BGN_TIME)," "),format="%Y-%m-%d %H%M")
+
+dfdam<-dfdam%>% mutate(TIME_DIFF=as.numeric(difftime(END_DT,BGN_DT,units="hours")))
+
+
+
+
+## Locations. Some events would be relatively widespread, it seems that the stormdata preparers added different locations
+#(latitude,longitude) for such events. Let us try to see how wide were the areas these events covered
+
+#How many obs have differen Lat,Long at beginning and ending points?
+sum(dfdam$LATITUDE==dfdam$LATITUDE_E,na.rm = T)
+#Width of an event using great circle distance
+#great circle distance using Haversine formula
+great_distance_hf <- function(lat1,long1,lat2,long2) {
+        R <- 6371 
+        a <- sin((lat2 - lat1)/2)^2 + cos(lat1) * cos(lat2) * sin((long2 - long1)/2)^2
+        c <- 2 * asin(min(1,sqrt(a)))
+        d = R * c
+        return(d) # km
+}
+
+#Select the geographical points for start and end locations 
+dfdam<-dfdam%>%mutate(
+            LOC_DIFF=mapply(great_distance_hf,
+            dfdam$LATITUDE,dfdam$LONGITUDE,
+            dfdam$LATITUDE_E,dfdam$LONGITUDE_))
+
+#dfdam2$LOC_DIFF[dfdam2$LOC_DIFF==0]<-NA
+
+#Most affected states
+table(dfdam$STATE)
+stateNOAA<-as.character(unique(dfdam$STATE))
+#We see that there are more entries than the common 50 (includes other regions and territories)
+complement_state<-function(x,y) unique(c(setdiff(x,y),setdiff(y,x)))
+dfdam$REGION<-mapvalues(as.character(dfdam$STATE),from = c(as.character(state.abb),
+                                             complement_state(stateNOAA,state.abb)),
+                        to =(c(as.character(state.region),rep("Other",17))))
+table(dfdam$REGION)
+#Add US state regions from the R dataset 
+
+##Plotting
+
+#Setting up theme
+gral_theme <- function(base_size = 12, base_family = "sans"){
+        theme_minimal(base_size = base_size, base_family = base_family) +
+                theme(
+                        axis.text = element_text(size = 12),
+                        axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5),
+                        axis.title = element_text(size = 14),
+                        panel.grid.major = element_line(color = "grey"),
+                        panel.grid.minor = element_blank(),
+                        panel.background = element_rect(fill = "aliceblue"),
+                        strip.background = element_rect(fill = "lightgrey", color = "grey", size = 1),
+                        strip.text = element_text(face = "bold", size = 12, color = "black"),
+                        legend.position = "bottom",
+                        legend.justification = "top",
+                        legend.box = "horizontal",
+                        legend.background = element_blank(),
+                        panel.border = element_rect(color = "grey", fill = NA, size = 0.5)
+                )
+}
+
+
+
+
+# Gather some variables for plotting
+library(tidyr)
+dfdam$ID<-seq.int(nrow(dfdam))
+
+dfdam_gather<-dfdam%>%gather(Group,Incidents,FATALITIES,INJURIES)
+dfdam_gather$Group<-as.factor(dfdam_gather$Group)
+
+ggplot(dfdam_gather,aes(x=BGN_DATE,y=log10(Incidents),color=EVTYPE))+
+       geom_jitter(aes(color = EVTYPE), size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Date",
+                y = "Incidents",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        ) +
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        facet_grid(Group ~ REGION) +
+        gral_theme() 
+
+dfdam_gather2<-dfdam%>%gather(Group,Damages,PROPDMG,CROPDMG)
+dfdam_gather2$Group<-as.factor(dfdam_gather2$Group)
+
+ggplot(dfdam_gather2,aes(x=BGN_DATE,y=log10(Damages),color=EVTYPE))+
+        geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Date",
+                y = "Damages",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        ) +
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        facet_grid(Group ~ REGION) +
+        gral_theme() 
+
+#How catastrophic an event could be?
+
+dfdam2<-dfdam[!(is.na(dfdam$TIME_DIFF)),]
+
+dfdam2_gather<-dfdam2%>%gather(Type,Incidents,FATALITIES,INJURIES)
+
+g<-ggplot(dfdam2_gather,aes(x=log10(TIME_DIFF),y=log10(Incidents),color=EVTYPE))+
+        geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+        labs(
+                color = "Event Type",
+                x = "Tim elapsed [h]",
+                y = "Incidents",
+                title = "1993-2011 US Storm events",
+                subtitle = "Dataset from NOAA",
+                caption = ""
+        )+
+        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        scale_x_continuous(limits=c(log10(1), log10(9000)), labels = scales::math_format(10^.x))+
+        facet_grid(Type ~ REGION) +
+        gral_theme()
+        
+
