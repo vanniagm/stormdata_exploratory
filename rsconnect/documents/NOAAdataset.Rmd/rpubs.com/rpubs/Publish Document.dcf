@@ -1,0 +1,8 @@
+name: Publish Document
+title:
+account: rpubs
+server: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/270600/1cb56255a36f4c28a2c35ed9af2dc2db
+bundleId: https://api.rpubs.com/api/v1/document/270600/1cb56255a36f4c28a2c35ed9af2dc2db
+url: http://rpubs.com/vanniagm/270600
+when: 1493092298.98974

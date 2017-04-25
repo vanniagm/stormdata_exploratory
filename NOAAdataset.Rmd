@@ -325,7 +325,7 @@ g2<-ggplot(df_melted,aes(x=value,y=Type,color=variable))+geom_point()
 g2+labs(title="Total number of incidents",x="",y="")+theme(legend.title=element_blank())
 ```
 
-From the figure above we can see that the event that has caused most harm through out the years (accumulative) is the Tornado. However, this may not be the type of event that has caused most harm in a single day (or event period). This is illustrated in the following tables, were I show the top 10 most harmful incidents, where the first row shows the maximum number of fatalities and injuries in each tables, respectively.
+From the figure above we can see that the event that has caused most harm through out the years (accumulative) is the Tornado. However, this may not be the type of event that has caused most harm in a single day (or event period). This is illustrated in the following tables, were I show the top 5 most harmful incidents, where the first row shows the maximum number of fatalities and injuries in each tables, respectively.
 
 ```{r,results='asis'}
 dftop<-dfdam[with(dfdam,order(-dfdam$FATALITIES,-dfdam$INJURIES)),c("BGN_DATE",'EVTYPE','STATE','FATALITIES','INJURIES','TIME_DIFF','LOC_DIFF')]
@@ -334,15 +334,28 @@ dftop2<-dfdam[with(dfdam,order(-dfdam$INJURIES,-dfdam$FATALITIES)),c("BGN_DATE",
 kable(head(dftop2,5))
 ```
 
-We can also look at the variable "TIME_DIFF", which described the time elapsed (for those events we have the data for) to see this 
+We can also look at the variable "TIME_DIFF", which described the time elapsed (for those events we have the data for) to see this. I will first rearrange the eventtypes in a new column for those with significant number of incidents and "others". In order to do this I will filter with a limit set by figure 2. since the median and the mean are very small (close to cero). 
+
+```{r}
+summary(dfdam$FATALITIES)
+summary(dfdam$INJURIES)
+sigevtype<-unique(dfdam$EVTYPE[dfdam$FATALITIES>50 | dfdam$INJURIES>200])
+sigevtype
+nsigtype<-complement_state(sigevtype,events)
+dfdam$SIGEVTYPE<-factor(mapvalues(dfdam$EVTYPE,from = nsigtype,
+                        to =rep("Other",length(nsigtype))))
+```
+
 
 ```{r,fig.width=10,fig.height=9}
+palet<-c("#89C5DA", "#DA5724", "#74D944", "#CE50CA", "#3F4921", "#C0717C", "#CBD588", "#5F7FC7", 
+"#673770", "#D3D93E", "#38333E")
 dfdam2<-dfdam[!(is.na(dfdam$TIME_DIFF)),]
 dfdam2_gather<-dfdam2%>%gather(Type,Incidents,FATALITIES,INJURIES)
-ggplot(dfdam2_gather,aes(x=log10(TIME_DIFF),y=log10(Incidents),color=EVTYPE))+ geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+ggplot(dfdam2_gather,aes(x=log10(TIME_DIFF),y=log10(Incidents),color=SIGEVTYPE))+ geom_jitter(aes(color = SIGEVTYPE), alpha=.6,size = 1.5) +
         labs(
                 color = "Event Type",
-                x = "Tim elapsed [h]",
+                x = "Time elapsed [h]",
                 y = "Incidents",
                 title = "1993-2011 US Storm events",
                 subtitle = "Dataset from NOAA",
@@ -351,7 +364,7 @@ ggplot(dfdam2_gather,aes(x=log10(TIME_DIFF),y=log10(Incidents),color=EVTYPE))+ g
         scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
         scale_x_continuous(limits=c(log10(1), log10(9000)), labels = scales::math_format(10^.x))+
         facet_grid(Type ~ REGION) +
-        gral_theme()
+        gral_theme()+scale_color_manual(values = palet)
 ```
 
 And finally we can look at the number of incidents (fatalities and injuries) across different regions of the US.
@@ -360,8 +373,8 @@ And finally we can look at the number of incidents (fatalities and injuries) acr
 dfdam$ID<-seq.int(nrow(dfdam))
 dfdam_gather<-dfdam%>%gather(Group,Incidents,FATALITIES,INJURIES)
 dfdam_gather$Group<-as.factor(dfdam_gather$Group)
-ggplot(dfdam_gather,aes(x=BGN_DATE,y=log10(Incidents),color=EVTYPE))+
-        geom_jitter(aes(color = EVTYPE), size = 1.5) +
+ggplot(dfdam_gather,aes(x=BGN_DATE,y=log10(Incidents),color=SIGEVTYPE))+
+        geom_jitter(aes(color = SIGEVTYPE), size = 1.5) +
         labs(
                 color = "Event Type",
                 x = "Date",
@@ -372,7 +385,7 @@ ggplot(dfdam_gather,aes(x=BGN_DATE,y=log10(Incidents),color=EVTYPE))+
         ) +
         scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
         facet_grid(Group ~ REGION) +
-        gral_theme() 
+        gral_theme()+scale_color_manual(values = palet)
 ```
 
 ### 2. Consequences in economy 
@@ -390,11 +403,21 @@ g2+labs(title="Total cost of damages",x="",y="")+theme(legend.title=element_blan
 
 Across the US.
 
+
+```{r}
+summary(dfdam$PROPDMG)
+summary(dfdam$CROPDMG)
+sevtype<-unique(dfdam$EVTYPE[dfdam$PROPDMG>2*10e8 | dfdam$CROPDMG>10e9])
+sevtype
+ntype<-complement_state(sevtype,events)
+dfdam$SEVTYPE<-factor(mapvalues(dfdam$EVTYPE,from = ntype,
+                        to =rep("Other",length(ntype))))
+```
 ```{r,fig.width=10,fig.height=9}
 dfdam_gather2<-dfdam%>%gather(Group,Damages,PROPDMG,CROPDMG)
 dfdam_gather2$Group<-as.factor(dfdam_gather2$Group)
-ggplot(dfdam_gather2,aes(x=BGN_DATE,y=log10(Damages),color=EVTYPE))+
-        geom_jitter(aes(color = EVTYPE),alpha=.5, size = 1.5) +
+ggplot(dfdam_gather2,aes(x=BGN_DATE,y=log10(Damages),color=SEVTYPE))+
+        geom_jitter(aes(color = SEVTYPE),alpha=.3, size = 1.5) +
         labs(
                 color = "Event Type",
                 x = "Date",
@@ -402,13 +425,12 @@ ggplot(dfdam_gather2,aes(x=BGN_DATE,y=log10(Damages),color=EVTYPE))+
                 title = "1993-2011 US Storm events",
                 subtitle = "Dataset from NOAA",
                 caption = ""
-        ) +
-        scale_y_continuous(limits=c(log10(1), log10(1600)), labels = scales::math_format(10^.x))+
+        ) + scale_y_continuous(limits=c(log10(1), log10(1.2e11)), labels = scales::math_format(10^.x))+
         facet_grid(Group ~ REGION) +
-        gral_theme() 
+        gral_theme()+scale_color_manual(values=palet)
 ```
 
-The following tables show the top 10 most damaging events in properties and crops cost, where the first row shows the most damaging for properties and crops, respectively.
+The following tables show the top 5 most damaging events in properties and crops cost, where the first row shows the most damaging for properties and crops, respectively.
 
 ```{r,results='asis'}
 dftop3<-dfdam[with(dfdam,order(-dfdam$PROPDMG,-dfdam$CROPDMG)),c("BGN_DATE",'EVTYPE','STATE','PROPDMG','CROPDMG','TIME_DIFF','LOC_DIFF')]
@@ -431,6 +453,7 @@ table(dfdam$STATE)
 statemax<-dfdam%>%group_by(STATE)%>%summarise(freq=n())
 statemax[statemax$freq==max(statemax$freq),"STATE"]
 ```
+
 
 
 
